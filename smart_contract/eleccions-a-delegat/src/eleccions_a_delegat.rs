@@ -22,9 +22,9 @@ pub trait EleccionsADelegat {
     #[upgrade]
     fn upgrade(&self) {}
 
-    // Implementació i gestio del cens de votants.
+    // Implementació i gestió del cens de votants.
     #[storage_mapper("cens_votants")]
-    fn cens_votants(&self) -> SetMapper<ManagedAddress<Self::Api>>;
+    fn cens_votants(&self) -> SetMapper<ManagedAddress>;
 
     #[only_owner]
     #[endpoint(afegirVotant)]
@@ -41,7 +41,7 @@ pub trait EleccionsADelegat {
     }
 
 
-
+    // Implementació i gestió del llistat de candidatures.
     #[only_owner]
     #[endpoint(candidatures)]
     #[storage_mapper("candidatures")]
@@ -56,9 +56,7 @@ pub trait EleccionsADelegat {
         self.candidatures().push(&Candidatura{nom: nova_candidatura, vots: 0});
     }
 
-   
-
-    #[view(getCandidatures)]
+    #[endpoint(getCandidatures)]
     fn get_candidatures_public(&self) -> Vec<String> {
         let mut llista_noms: Vec<String> = Vec::new();
         for c in self.candidatures().iter() {
@@ -70,7 +68,15 @@ pub trait EleccionsADelegat {
 
     #[endpoint(votar)]
     fn votar(&self, num_candidatura: usize) {
+        let votant = self.blockchain().get_caller();
+        require!(self.cens_votants().contains(&votant), "No tens permís per votar.");
+
         let mut candidatura = self.candidatures().get(num_candidatura);
         candidatura.vots += 1;
+        self.candidatures().set(num_candidatura, &candidatura);
+
+        // Eliminem el votant del cens un cop ha votat per evitar que pugui votar 2 cops.
+        self.cens_votants().remove(&votant);
+    }
 }
-}
+
