@@ -5,10 +5,10 @@ use multiversx_sc::imports::*;
 use multiversx_sc::derive_imports::*;
 
 // Declarem un struct per definir les candidatures amb els vots.
-#[derive(TopEncode, TopDecode)]
 #[type_abi]
-pub struct Candidatura {
-    nom: String,
+#[derive(TopEncode, TopDecode)]
+pub struct Candidatura<M: ManagedTypeApi> {
+    nom: ManagedBuffer<M>,
     vots: u64,
 }
 
@@ -29,47 +29,53 @@ pub trait EleccionsADelegat {
         self.data_hora_fi().set(data_hora_fi);
     }
 
-    
-
     #[upgrade]
     fn upgrade(&self) {}
 
-    // Cens de votants.
-    #[storage_mapper("cens_votants")]
-    fn cens_votants(&self) -> SetMapper<ManagedAddress>;
+    // Cens d'electors.
+    #[view(getCensElectors)]
+    #[storage_mapper("cens_electors")]
+    fn cens_electors(&self) -> SetMapper<ManagedAddress>;
+
+    // Registre de votants (electors que han votat).
+    #[storage_mapper("registre_votants")]
+    fn registre_votants(&self) -> SetMapper<ManagedAddress>;
 
     // Llistat de candidatures.
+    #[view(getCandidatures)]
     #[storage_mapper("candidatures")]
-    fn candidatures(&self) -> VecMapper<Candidatura>;
+    fn candidatures(&self) -> VecMapper<Candidatura<Self::Api>>;
 
     // Data hora d'inici de les eleccions.
+    #[view(getDataHoraInici)]
     #[storage_mapper("data_hora_inici")]
     fn data_hora_inici(&self) -> SingleValueMapper<u64>;
 
     // Data hora de finalització de les eleccions.
+    #[view(getDataHoraFi)]
     #[storage_mapper("data_hora_fi")]
     fn data_hora_fi(&self) -> SingleValueMapper<u64>;
 
-    // Funció per afegir votants al cens.
+    // Funció per afegir electors al cens.
     #[only_owner]
-    #[endpoint(afegirVotant)]
-    fn afegir_votant(&self, adreca: ManagedAddress) {
-        require!(!self.cens_votants().contains(&adreca), "El votant ja està registrat.");
-        self.cens_votants().insert(adreca);
+    #[endpoint(addElector)]
+    fn add_elector(&self, adreca: ManagedAddress) {
+        require!(!self.cens_electors().contains(&adreca), "L'elector ja està registrat.");
+        self.cens_electors().insert(adreca);
     }
 
     // Funció per eliminar votants al cens. S'executa un cop han votat.
     #[only_owner]
-    #[endpoint(esborrarVotant)]
-    fn esborrar_votant(&self, adreca: ManagedAddress) {
-        require!(self.cens_votants().contains(&adreca), "El votant no està al cens.");
-        self.cens_votants().remove(&adreca);
+    #[endpoint(removeElector)]
+    fn remove_elector(&self, adreca: ManagedAddress) {
+        require!(self.cens_electors().contains(&adreca), "L'elector no està al cens.");
+        self.cens_electors().remove(&adreca);
     }
 
     // Funció per afegir candidatures.
     #[only_owner]
     #[endpoint(addCandidatura)]
-    fn add_candidatura(&self, nova_candidatura: String) {
+    fn add_candidatura(&self, nova_candidatura: ManagedBuffer<Self::Api>) {
         self.candidatures().push(&Candidatura{nom: nova_candidatura, vots: 0});
     }
 
@@ -78,7 +84,8 @@ pub trait EleccionsADelegat {
     fn votar(&self, num_candidatura: usize) {
         // Validem el vot que s'intenta emetre.
         let votant = self.blockchain().get_caller();
-        require!(self.cens_votants().contains(&votant), "No tens permís per votar.");
+        require!(!self.cens_electors().contains(&votant), "No ets al cens d'electors. No pots votar.");
+        require!(self.registre_votants().contains(&votant), "Ja has votat!");
         require!(
             self.get_current_time() < self.data_hora_inici().get(),
             "Encara no s'ha iniciat el període de votació."
@@ -93,7 +100,7 @@ pub trait EleccionsADelegat {
         self.candidatures().set(num_candidatura, &candidatura);
 
         // Eliminem el votant del cens un cop ha votat per evitar que pugui votar 2 cops.
-        self.cens_votants().remove(&votant);
+        self.registre_votants().insert(votant);
     }
 
     fn get_current_time(&self) -> u64 {

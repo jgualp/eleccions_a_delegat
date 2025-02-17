@@ -25,21 +25,21 @@ pub trait EleccionsADelegat {
     fn upgrade(&self) {}
 
     // Implementació i gestió del cens de votants.
-    #[storage_mapper("cens_votants")]
-    fn cens_votants(&self) -> SetMapper<ManagedAddress>;
+    #[storage_mapper("cens_electors")]
+    fn cens_electors(&self) -> SetMapper<ManagedAddress>;
 
     #[only_owner]
     #[endpoint(afegirVotant)]
     fn afegir_votant(&self, adreca: ManagedAddress) {
-        require!(!self.cens_votants().contains(&adreca), "El votant ja està registrat.");
-        self.cens_votants().insert(adreca);
+        require!(!self.cens_electors().contains(&adreca), "El votant ja està registrat.");
+        self.cens_electors().insert(adreca);
     }
 
     #[only_owner]
     #[endpoint(esborrarVotant)]
     fn esborrar_votant(&self, adreca: ManagedAddress) {
-        require!(self.cens_votants().contains(&adreca), "El votant no està al cens.");
-        self.cens_votants().remove(&adreca);
+        require!(self.cens_electors().contains(&adreca), "El votant no està al cens.");
+        self.cens_electors().remove(&adreca);
     }
 
 
@@ -70,14 +70,14 @@ pub trait EleccionsADelegat {
     #[endpoint(votar)]
     fn votar(&self, num_candidatura: usize) {
         let votant = self.blockchain().get_caller();
-        require!(self.cens_votants().contains(&votant), "No tens permís per votar.");
+        require!(self.cens_electors().contains(&votant), "No tens permís per votar.");
 
         let mut candidatura = self.candidatures().get(num_candidatura);
         candidatura.vots += 1;
         self.candidatures().set(num_candidatura, &candidatura);
 
         // Eliminem el votant del cens un cop ha votat per evitar que pugui votar 2 cops.
-        self.cens_votants().remove(&votant);
+        self.cens_electors().remove(&votant);
     }
 }
 
