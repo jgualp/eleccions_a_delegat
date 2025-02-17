@@ -3,6 +3,9 @@
 #[allow(unused_imports)]
 use multiversx_sc::imports::*;
 use multiversx_sc::derive_imports::*;
+//use multiversx_sc::imports::*;
+//use multiversx_sc::codec;
+//use multiversx_sc::proxy_imports::{TopDecode, TopEncode, type_abi};
 
 // Declarem un struct per definir les candidatures amb els vots.
 #[derive(TopEncode, TopDecode)]
@@ -12,45 +15,19 @@ pub struct Candidatura {
     vots: u64,
 }
 
+/// An empty contract. To be used as a template when starting a new contract from scratch.
 #[multiversx_sc::contract]
 pub trait EleccionsADelegat {
-    // Constructor per inicialitzar el termini d'eleccions.
     #[init]
-    fn init(&self, data_hora_inici: u64, data_hora_fi: u64) {
-        require!(
-            data_hora_inici > self.get_current_time(),
-            "La data/hora d'inici no pot ser anterior a l'actual"
-        );
-        require!(
-            data_hora_fi > data_hora_inici,
-            "La data/hora de finalització ha de ser posterior a la d'inici"
-        );
-        self.data_hora_inici().set(data_hora_inici);
-        self.data_hora_fi().set(data_hora_fi);
-    }
-
-    
+    fn init(&self) {}
 
     #[upgrade]
     fn upgrade(&self) {}
 
-    // Cens de votants.
+    // Implementació i gestió del cens de votants.
     #[storage_mapper("cens_votants")]
     fn cens_votants(&self) -> SetMapper<ManagedAddress>;
 
-    // Llistat de candidatures.
-    #[storage_mapper("candidatures")]
-    fn candidatures(&self) -> VecMapper<Candidatura>;
-
-    // Data hora d'inici de les eleccions.
-    #[storage_mapper("data_hora_inici")]
-    fn data_hora_inici(&self) -> SingleValueMapper<u64>;
-
-    // Data hora de finalització de les eleccions.
-    #[storage_mapper("data_hora_fi")]
-    fn data_hora_fi(&self) -> SingleValueMapper<u64>;
-
-    // Funció per afegir votants al cens.
     #[only_owner]
     #[endpoint(afegirVotant)]
     fn afegir_votant(&self, adreca: ManagedAddress) {
@@ -58,7 +35,6 @@ pub trait EleccionsADelegat {
         self.cens_votants().insert(adreca);
     }
 
-    // Funció per eliminar votants al cens. S'executa un cop han votat.
     #[only_owner]
     #[endpoint(esborrarVotant)]
     fn esborrar_votant(&self, adreca: ManagedAddress) {
@@ -66,27 +42,35 @@ pub trait EleccionsADelegat {
         self.cens_votants().remove(&adreca);
     }
 
-    // Funció per afegir candidatures.
+
+    // Implementació i gestió del llistat de candidatures.
+    #[endpoint(candidatures)]
+    #[storage_mapper("candidatures")]
+    fn candidatures(&self) -> VecMapper<Candidatura>;
+    // Proposta de ChatGPT per eficiència i per possibilitar la modificació dels vots.
+    // fn candidatures(&self) -> MapMapper<ManagedBuffer<Self::Api>, Candidatura<Self::Api>>;
+
+
     #[only_owner]
     #[endpoint(addCandidatura)]
     fn add_candidatura(&self, nova_candidatura: String) {
         self.candidatures().push(&Candidatura{nom: nova_candidatura, vots: 0});
     }
 
-    // Funció que gestiona el vot d'un elector a una de les candidatures.
+    #[endpoint(getCandidatures)]
+    fn get_candidatures_public(&self) -> Vec<String> {
+        let mut llista_noms: Vec<String> = Vec::new();
+        for c in self.candidatures().iter() {
+            llista_noms.push(c.nom);
+        }
+
+        llista_noms
+    }
+
     #[endpoint(votar)]
     fn votar(&self, num_candidatura: usize) {
-        // Validem el vot que s'intenta emetre.
         let votant = self.blockchain().get_caller();
         require!(self.cens_votants().contains(&votant), "No tens permís per votar.");
-        require!(
-            self.get_current_time() < self.data_hora_inici().get(),
-            "Encara no s'ha iniciat el període de votació."
-        );
-        require!(
-            self.get_current_time() > self.data_hora_fi().get(),
-            "El període de votació ja ha finalitzat."
-        );
 
         let mut candidatura = self.candidatures().get(num_candidatura);
         candidatura.vots += 1;
@@ -94,10 +78,6 @@ pub trait EleccionsADelegat {
 
         // Eliminem el votant del cens un cop ha votat per evitar que pugui votar 2 cops.
         self.cens_votants().remove(&votant);
-    }
-
-    fn get_current_time(&self) -> u64 {
-        self.blockchain().get_block_timestamp()
     }
 }
 
